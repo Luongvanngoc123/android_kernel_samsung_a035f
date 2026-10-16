@@ -358,6 +358,11 @@ build_kernel() {
 
     "${RDIR}/scripts/config" --file "${RDIR}/out/.config" -d IKHEADERS || true
 
+    # Fail fast if Kconfig silently dropped KernelSU (e.g. driver not wired in)
+    grep -q '^CONFIG_KSU=y' "${RDIR}/out/.config" && \
+        grep -q '^CONFIG_KSU_TAMPER_SYSCALL_TABLE=y' "${RDIR}/out/.config" || \
+        { echo "[!] KernelSU config missing from out/.config"; exit 1; }
+
     export MALLOC_TRIM_THRESHOLD_=131072
     export MALLOC_MMAP_THRESHOLD_=131072
     ulimit -n 65536 || true
@@ -402,17 +407,19 @@ build_tar() {
     fi
 }
 
+# KernelSU (backslashxx fork, pinned tag). Kernel 4.14 uses the sys_call_table hook,
+# so no kernel source files or struct layouts change (vendor .ko CRCs stay intact).
+KSU_REF="v3.3.1"
+if [ ! -d "${RDIR}/KernelSU" ]; then
+    echo "======================================================"
+    echo "  Setting up KernelSU (backslashxx ${KSU_REF})        "
+    echo "======================================================"
+    curl -LSsf "https://raw.githubusercontent.com/backslashxx/KernelSU/${KSU_REF}/kernel/setup.sh" | bash -s "${KSU_REF}"
+fi
+
 # Run
 build_kernel
 build_boot
 build_tar
-
-# Build external memkernel modules
-if [ -f "${RDIR}/build_external_module.sh" ]; then
-    echo "======================================================"
-    echo "  Building MemKernel / RTDev Modules                  "
-    echo "======================================================"
-    bash "${RDIR}/build_external_module.sh"
-fi
 
 echo -e "\n[✔] All Builds Completed Successfully!\n"
